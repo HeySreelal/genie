@@ -17,6 +17,8 @@
 
 ---
 
+</div>
+
 ### 🎬 Demo
 
 ```bash
@@ -33,8 +35,6 @@ $ genie
 
 🚀 Ready to commit! Run: git commit
 ```
-
-</div>
 
 ## 🚀 Quick Start
 
