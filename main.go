@@ -19,6 +19,18 @@ const (
 	geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
 )
 
+// Color constants
+const (
+	colorReset  = "\033[0m"
+	colorGray   = "\033[90m" // Dim gray for logs
+	colorGreen  = "\033[32m" // Success messages
+	colorBlue   = "\033[34m" // Info messages
+	colorYellow = "\033[33m" // Warnings
+	colorRed    = "\033[31m" // Errors
+	colorBold   = "\033[1m"  // Bold text
+	colorCyan   = "\033[36m" // Highlights
+)
+
 type GeminiRequest struct {
 	Contents []Content `json:"contents"`
 }
@@ -53,7 +65,27 @@ type ErrorInfo struct {
 	Message string `json:"message"`
 }
 
+// Helper functions for colored output
+func grayf(format string, args ...interface{}) {
+	fmt.Printf(colorGray+format+colorReset, args...)
+}
+
+func redf(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, colorRed+format+colorReset, args...)
+}
+
+func boldf(format string, args ...interface{}) {
+	fmt.Printf(colorBold+format+colorReset, args...)
+}
+
+func cyanf(format string, args ...interface{}) {
+	fmt.Printf(colorCyan+format+colorReset, args...)
+}
+
 func main() {
+	var context string
+
+	// Parse arguments
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--version", "-v":
@@ -62,30 +94,36 @@ func main() {
 		case "--help", "-h":
 			printHelp()
 			return
+		default:
+			// If first argument is not a flag, treat it as context
+			// Join all arguments as context (in case of spaces)
+			context = strings.Join(os.Args[1:], " ")
 		}
 	}
 
 	// Check if we're in a git repository
 	if !isGitRepo() {
-		fmt.Fprintf(os.Stderr, "❌ Error: Not a git repository\n")
+		redf("❌ Error: Not a git repository\n")
 		os.Exit(1)
 	}
 
 	// Get API key from environment
 	apiKey := os.Getenv("GOOGLE_AI_TOKEN")
 	if apiKey == "" {
-		fmt.Fprintf(os.Stderr, "❌ Error: GOOGLE_AI_TOKEN environment variable not set\n")
-		fmt.Fprintf(os.Stderr, "   Get your API key from: https://makersuite.google.com/app/apikey\n")
-		fmt.Fprintf(os.Stderr, "   Then run: export GOOGLE_AI_TOKEN=your_api_key_here\n")
+		redf("❌ Error: GOOGLE_AI_TOKEN environment variable not set\n")
+		redf("   Get your API key from: https://aistudio.google.com/apikey\n")
+		redf("   Then run: export GOOGLE_AI_TOKEN=your_api_key_here\n")
 		os.Exit(1)
 	}
 
-	fmt.Println("🔍 Analyzing git changes...")
+	if context != "" {
+		grayf("📝 Context: \"%s\"\n", context)
+	}
 
-	// Get git diff
-	diff, err := getGitDiff()
+	// Get git diff and determine what type of changes we're analyzing
+	diff, changesType, err := getGitDiff()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error getting git diff: %v\n", err)
+		redf("❌ Error getting git diff: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -94,42 +132,46 @@ func main() {
 		return
 	}
 
+	// Show what we're analyzing - more subtle
+	switch changesType {
+	case "staged":
+		grayf("Analyzing staged changes...\n")
+	case "unstaged":
+		grayf("No staged changes, analyzing unstaged changes...\n")
+		grayf("💡 Tip: Run 'git add .' to stage changes first\n")
+	case "untracked":
+		grayf("Analyzing untracked files...\n")
+		grayf("💡 Tip: Run 'git add .' to stage files first\n")
+	}
+
 	// Get git status for context
 	status, err := getGitStatus()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error getting git status: %v\n", err)
+		redf("❌ Error getting git status: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println("🧠 Generating commit message with Gemini AI...")
 
 	// Generate commit message
-	commitMsg, err := generateCommitMessage(apiKey, diff, status)
+	commitMsg, err := generateCommitMessage(apiKey, diff, status, context, changesType)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error generating commit message: %v\n", err)
+		redf("❌ Error generating commit message: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Display the generated commit message
-	fmt.Println("\n✨ Generated commit message:")
-	fmt.Println("┌─────────────────────────────────────────────────────────────────")
-	fmt.Printf("│ %s\n", commitMsg)
-	fmt.Println("└─────────────────────────────────────────────────────────────────")
+	// Display the generated commit message - make this prominent
+	fmt.Println()
+	boldf("✨ Generated commit message:\n")
+	cyanf("┌─────────────────────────────────────────────────────────────────\n")
+	cyanf("│ %s\n", commitMsg)
+	cyanf("└─────────────────────────────────────────────────────────────────\n")
 
 	// Copy to clipboard
-	fmt.Print("\n📋 Copying to clipboard...")
 	err = copyToClipboard(commitMsg)
 	if err != nil {
-		fmt.Printf(" ❌ Failed\n")
-		fmt.Fprintf(os.Stderr, "   Could not copy to clipboard: %v\n", err)
-		fmt.Printf("   You can copy manually: %s\n", commitMsg)
+		grayf("📋 Could not copy to clipboard: %v\n", err)
 	} else {
-		fmt.Printf(" ✅ Done!\n")
+		grayf("📋 Copied to clipboard\n")
 	}
-
-	fmt.Printf("\n🚀 Ready to commit! Run: git commit -m \"%s\"\n", commitMsg)
-	fmt.Println("   Or simply: git commit (message is in clipboard)")
-
 }
 
 func printHelp() {
@@ -137,15 +179,20 @@ func printHelp() {
 
 USAGE:
     %s [OPTIONS]
+    %s [CONTEXT]
 
 OPTIONS:
     -h, --help      Show this help message
     -v, --version   Show version information
 
+ARGUMENTS:
+    CONTEXT         Optional context to help generate better commit messages
+                   (e.g., "changes from Bot API 9.0", "refactor for performance")
+
 SETUP:
-    1. Get your Gemini API key from: https://makersuite.google.com/app/apikey
-    2. Set the environment variable: export GEMINI_API_KEY=your_api_key_here
-    3. Run %s in any git repository with staged changes
+    1. Get your Gemini API key from: https://aistudio.google.com/apikey
+    2. Set the environment variable: export GOOGLE_AI_TOKEN=your_api_key_here
+    3. Run %s in any git repository with changes
 
 DESCRIPTION:
     %s analyzes your git changes and generates perfect commit messages
@@ -153,12 +200,21 @@ DESCRIPTION:
     includes relevant emojis, and automatically copies the message to
     your clipboard for easy use.
 
-EXAMPLES:
-    %s                    # Generate commit message and copy to clipboard
-    %s --version         # Show version
-    %s --help           # Show this help
+    The tool prioritizes staged changes (files added with 'git add'), but
+    if no staged changes are found, it will analyze all unstaged changes
+    in your working directory.
 
-`, appName, version, appName, appName, appName, appName, appName, appName)
+    You can optionally provide context to help generate more accurate
+    commit messages when you have many related changes.
+
+EXAMPLES:
+    %s                              # Generate commit message for changes
+    %s "Bot API 9.0 migration"      # Generate with context
+    %s "performance improvements"   # Generate with context
+    %s --version                   # Show version
+    %s --help                     # Show this help
+
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func isGitRepo() bool {
@@ -167,23 +223,55 @@ func isGitRepo() bool {
 	return err == nil
 }
 
-func getGitDiff() (string, error) {
+func getGitDiff() (string, string, error) {
+	// First, try to get staged changes
 	cmd := exec.Command("git", "diff", "--cached")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	stagedDiff := strings.TrimSpace(string(output))
+
+	// If we have staged changes, return them
+	if stagedDiff != "" {
+		return stagedDiff, "staged", nil
 	}
 
 	// If no staged changes, get unstaged changes
-	if strings.TrimSpace(string(output)) == "" {
-		cmd = exec.Command("git", "diff")
-		output, err = cmd.Output()
-		if err != nil {
-			return "", err
-		}
+	cmd = exec.Command("git", "diff")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", "", err
 	}
 
-	return string(output), nil
+	unstagedDiff := strings.TrimSpace(string(output))
+	if unstagedDiff != "" {
+		return unstagedDiff, "unstaged", nil
+	}
+
+	// If still no diff, check for untracked files
+	cmd = exec.Command("git", "ls-files", "--others", "--exclude-standard")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", "", err
+	}
+
+	untrackedFiles := strings.TrimSpace(string(output))
+	if untrackedFiles != "" {
+		// For untracked files, we can't get a proper diff, so we'll create a summary
+		files := strings.Split(untrackedFiles, "\n")
+		var summary strings.Builder
+		summary.WriteString("New untracked files:\n")
+		for _, file := range files {
+			if file != "" {
+				summary.WriteString(fmt.Sprintf("+ %s\n", file))
+			}
+		}
+		return summary.String(), "untracked", nil
+	}
+
+	return "", "", nil
 }
 
 func getGitStatus() (string, error) {
@@ -195,50 +283,125 @@ func getGitStatus() (string, error) {
 	return string(output), nil
 }
 
-func generateCommitMessage(apiKey, diff, status string) (string, error) {
-	prompt := fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
+func generateCommitMessage(apiKey, diff, status, context, changesType string) (string, error) {
+	changesDescription := ""
+	switch changesType {
+	case "staged":
+		changesDescription = "staged changes (ready to commit)"
+	case "unstaged":
+		changesDescription = "unstaged changes (not yet staged for commit)"
+	case "untracked":
+		changesDescription = "untracked files (new files not yet added to git)"
+	}
 
-Analyze the following git diff and status, then generate a concise, descriptive commit message that follows these guidelines:
+	// Build the enhanced prompt
+	var promptBuilder strings.Builder
 
-1. Start with a relevant emoji that represents the type of change
-2. Use conventional commit format after emoji: emoji type(scope): description
-3. Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
-4. Keep the first line under 50 characters if possible
-5. Be specific about what changed, not just that something changed
-6. Use imperative mood ("add" not "added" or "adds")
-7. Don't include file names unless crucial to understanding
-8. Focus on the "why" and "what" rather than "how"
+	promptBuilder.WriteString(`You are a world-class senior software engineer and git expert with years of experience writing perfect, professional commit messages. Your task is to analyze git changes and generate the ideal commit message.
 
-Emoji guidelines:
-- ✨ feat: new features
-- 🐛 fix: bug fixes
-- 📝 docs: documentation
-- 💄 style: formatting, styling
-- ♻️ refactor: code refactoring
-- ✅ test: adding/updating tests
-- 🔧 chore: maintenance tasks
-- ⚡ perf: performance improvements
-- 👷 ci: CI/CD changes
-- 📦 build: build system changes
-- 🚀 deploy: deployment related
-- 🔒 security: security improvements
-- 🎨 ui: UI/UX improvements
-- 🗃️ database: database changes
-- 🔥 remove: removing code/files
+ANALYSIS REQUIREMENTS:
+- Carefully examine the git diff and status to understand what actually changed
+- Identify the primary purpose and impact of the changes
+- Consider the scope and complexity of modifications
+- Determine if this is a feature, fix, refactor, or other type of change
 
-Git Status:
+COMMIT MESSAGE RULES:
+1. 🎯 START WITH APPROPRIATE EMOJI: Choose the most relevant emoji that represents the change type
+2. 📏 FORMAT: Use conventional commit format: "emoji type(scope): description"
+3. 🔤 IMPERATIVE MOOD: Use imperative mood ("add" not "added", "fix" not "fixed")
+4. 📐 LENGTH: Keep first line under 50 characters when possible, maximum 72
+5. 🎯 BE SPECIFIC: Focus on WHAT changed and WHY, not HOW
+6. 🚫 NO FILENAMES: Don't mention specific files unless absolutely crucial
+7. 💡 CLARITY: Make it immediately clear what the commit accomplishes
+8. 🏷️ SCOPE: Include scope in parentheses when it adds clarity (e.g., auth, api, ui)
+
+CONVENTIONAL COMMIT TYPES:
+- feat: New features or enhancements
+- fix: Bug fixes and corrections  
+- docs: Documentation changes
+- style: Code formatting, whitespace, styling
+- refactor: Code restructuring without functionality changes
+- test: Adding or modifying tests
+- chore: Maintenance, build process, dependencies
+- perf: Performance improvements
+- ci: CI/CD pipeline changes
+- build: Build system, external dependencies
+- revert: Reverting previous changes
+
+EMOJI SELECTION GUIDE:
+✨ feat: new features, enhancements
+🐛 fix: bug fixes, error corrections
+📝 docs: documentation, README updates
+💄 style: formatting, code style, UI styling
+♻️ refactor: code refactoring, restructuring
+✅ test: adding/updating tests
+🔧 chore: maintenance, config, build
+⚡ perf: performance optimizations
+👷 ci: CI/CD, workflows, automation
+📦 build: build system, dependencies
+🚀 deploy: deployment, releases
+🔒 security: security fixes, improvements
+🎨 ui: UI/UX improvements, design
+🗃️ database: database changes, migrations
+🔥 remove: removing code, files, features
+🩹 hotfix: critical fixes
+🚚 move: moving or renaming files
+📱 responsive: mobile/responsive changes
+🌐 i18n: internationalization, localization
+🔊 logging: adding or updating logs
+🔇 mute: removing logs
+👥 contributor: adding contributors
+🚸 accessibility: improving accessibility
+💚 green: fixing CI, improving build
+🔖 release: version tags, releases
+🚨 warning: fixing warnings, linter issues
+🚧 wip: work in progress
+💥 breaking: breaking changes
+📈 analytics: adding analytics, tracking
+🔐 auth: authentication, authorization
+🌍 global: global changes, configurations`)
+
+	// Add context section if provided
+	if context != "" {
+		promptBuilder.WriteString(fmt.Sprintf(`
+
+🎯 DEVELOPER CONTEXT:
+The developer provided this context: "%s"
+
+This context is CRITICAL - use it to understand the broader purpose and ensure your commit message accurately reflects the intended changes within this context. The context should guide your interpretation of what these technical changes accomplish at a higher level.`, context))
+	}
+
+	promptBuilder.WriteString(fmt.Sprintf(`
+
+📊 CHANGE ANALYSIS:
+You are analyzing: %s
+
+Git Status Output:
 %s
 
-Git Diff:
+Git Diff/Changes:
 %s
 
-Respond with ONLY the commit message including the emoji, no explanation or additional text.`, status, diff)
+🎯 RESPONSE FORMAT:
+Respond with ONLY the commit message including emoji. No explanations, quotes, or additional text.
+
+EXAMPLES OF EXCELLENT COMMIT MESSAGES:
+✨ feat(auth): add OAuth2 Google integration
+🐛 fix(api): handle null response in user endpoint  
+♻️ refactor(utils): simplify date formatting logic
+📝 docs: update API authentication guide
+🔧 chore(deps): update React to v18.2.0
+⚡ perf(db): optimize user query with indexing
+🎨 ui: improve button hover animations
+🔒 security: sanitize user input in forms
+
+Generate the perfect commit message now:`, changesDescription, status, diff))
 
 	reqBody := GeminiRequest{
 		Contents: []Content{
 			{
 				Parts: []Part{
-					{Text: prompt},
+					{Text: promptBuilder.String()},
 				},
 			},
 		},
