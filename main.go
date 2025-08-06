@@ -92,8 +92,8 @@ func main() {
 		fmt.Printf("📝 Using context: \"%s\"\n", context)
 	}
 
-	// Get git diff
-	diff, err := getGitDiff()
+	// Get git diff and determine what type of changes we're analyzing
+	diff, changesType, err := getGitDiff()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error getting git diff: %v\n", err)
 		os.Exit(1)
@@ -102,6 +102,15 @@ func main() {
 	if strings.TrimSpace(diff) == "" {
 		fmt.Println("✨ No changes detected. Nothing to commit!")
 		return
+	}
+
+	// Show what we're analyzing
+	switch changesType {
+	case "staged":
+		fmt.Println("📋 Analyzing staged changes (ready to commit)")
+	case "unstaged":
+		fmt.Println("📝 No staged changes found, analyzing unstaged changes")
+		fmt.Println("💡 Tip: Run 'git add .' to stage all changes before committing")
 	}
 
 	// Get git status for context
@@ -114,7 +123,7 @@ func main() {
 	fmt.Println("🧠 Generating commit message with Gemini AI...")
 
 	// Generate commit message
-	commitMsg, err := generateCommitMessage(apiKey, diff, status, context)
+	commitMsg, err := generateCommitMessage(apiKey, diff, status, context, changesType)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error generating commit message: %v\n", err)
 		os.Exit(1)
@@ -136,10 +145,6 @@ func main() {
 	} else {
 		fmt.Printf(" ✅ Done!\n")
 	}
-
-	fmt.Printf("\n🚀 Ready to commit! Run: git commit -m \"%s\"\n", commitMsg)
-	fmt.Println("   Or simply: git commit (message is in clipboard)")
-
 }
 
 func printHelp() {
@@ -158,9 +163,9 @@ ARGUMENTS:
                    (e.g., "changes from Bot API 9.0", "refactor for performance")
 
 SETUP:
-    1. Get your Gemini API key from: https://makersuite.google.com/app/apikey
+    1. Get your Gemini API key from: https://aistudio.google.com/apikey
     2. Set the environment variable: export GOOGLE_AI_TOKEN=your_api_key_here
-    3. Run %s in any git repository with staged changes
+    3. Run %s in any git repository with changes
 
 DESCRIPTION:
     %s analyzes your git changes and generates perfect commit messages
@@ -168,11 +173,15 @@ DESCRIPTION:
     includes relevant emojis, and automatically copies the message to
     your clipboard for easy use.
 
+    The tool prioritizes staged changes (files added with 'git add'), but
+    if no staged changes are found, it will analyze all unstaged changes
+    in your working directory.
+
     You can optionally provide context to help generate more accurate
     commit messages when you have many related changes.
 
 EXAMPLES:
-    %s                              # Generate commit message automatically
+    %s                              # Generate commit message for changes
     %s "Bot API 9.0 migration"      # Generate with context
     %s "performance improvements"   # Generate with context
     %s --version                   # Show version
@@ -187,23 +196,55 @@ func isGitRepo() bool {
 	return err == nil
 }
 
-func getGitDiff() (string, error) {
+func getGitDiff() (string, string, error) {
+	// First, try to get staged changes
 	cmd := exec.Command("git", "diff", "--cached")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	stagedDiff := strings.TrimSpace(string(output))
+
+	// If we have staged changes, return them
+	if stagedDiff != "" {
+		return stagedDiff, "staged", nil
 	}
 
 	// If no staged changes, get unstaged changes
-	if strings.TrimSpace(string(output)) == "" {
-		cmd = exec.Command("git", "diff")
-		output, err = cmd.Output()
-		if err != nil {
-			return "", err
-		}
+	cmd = exec.Command("git", "diff")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", "", err
 	}
 
-	return string(output), nil
+	unstagedDiff := strings.TrimSpace(string(output))
+	if unstagedDiff != "" {
+		return unstagedDiff, "unstaged", nil
+	}
+
+	// If still no diff, check for untracked files
+	cmd = exec.Command("git", "ls-files", "--others", "--exclude-standard")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", "", err
+	}
+
+	untrackedFiles := strings.TrimSpace(string(output))
+	if untrackedFiles != "" {
+		// For untracked files, we can't get a proper diff, so we'll create a summary
+		files := strings.Split(untrackedFiles, "\n")
+		var summary strings.Builder
+		summary.WriteString("New untracked files:\n")
+		for _, file := range files {
+			if file != "" {
+				summary.WriteString(fmt.Sprintf("+ %s\n", file))
+			}
+		}
+		return summary.String(), "untracked", nil
+	}
+
+	return "", "", nil
 }
 
 func getGitStatus() (string, error) {
@@ -215,11 +256,20 @@ func getGitStatus() (string, error) {
 	return string(output), nil
 }
 
-func generateCommitMessage(apiKey, diff, status, context string) (string, error) {
+func generateCommitMessage(apiKey, diff, status, context, changesType string) (string, error) {
 	var prompt string
 
-	if context != "" {
-		prompt = fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
+	changesDescription := ""
+	switch changesType {
+	case "staged":
+		changesDescription = "staged changes (ready to commit)"
+	case "unstaged":
+		changesDescription = "unstaged changes (not yet staged for commit)"
+	case "untracked":
+		changesDescription = "untracked files (new files not yet added to git)"
+	}
+
+	basePrompt := `You are a senior software engineer tasked with writing the perfect git commit message.
 
 Analyze the following git diff and status, then generate a concise, descriptive commit message that follows these guidelines:
 
@@ -230,12 +280,19 @@ Analyze the following git diff and status, then generate a concise, descriptive 
 5. Be specific about what changed, not just that something changed
 6. Use imperative mood ("add" not "added" or "adds")
 7. Don't include file names unless crucial to understanding
-8. Focus on the "why" and "what" rather than "how"
+8. Focus on the "why" and "what" rather than "how"`
+
+	contextSection := ""
+	if context != "" {
+		contextSection = fmt.Sprintf(`
 
 **IMPORTANT: Take into account this context provided by the developer:**
 "%s"
 
-This context should guide your understanding of what these changes are about. Use this information to create a more accurate and meaningful commit message that reflects the broader purpose of these changes.
+This context should guide your understanding of what these changes are about. Use this information to create a more accurate and meaningful commit message that reflects the broader purpose of these changes.`, context)
+	}
+
+	emojiGuidelines := `
 
 Emoji guidelines:
 - ✨ feat: new features
@@ -252,45 +309,11 @@ Emoji guidelines:
 - 🔒 security: security improvements
 - 🎨 ui: UI/UX improvements
 - 🗃️ database: database changes
-- 🔥 remove: removing code/files
+- 🔥 remove: removing code/files`
 
-Git Status:
-%s
+	analysisNote := fmt.Sprintf("\n\n**Note:** You are analyzing %s.", changesDescription)
 
-Git Diff:
-%s
-
-Respond with ONLY the commit message including the emoji, no explanation or additional text.`, context, status, diff)
-	} else {
-		prompt = fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
-
-Analyze the following git diff and status, then generate a concise, descriptive commit message that follows these guidelines:
-
-1. Start with a relevant emoji that represents the type of change
-2. Use conventional commit format after emoji: emoji type(scope): description
-3. Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
-4. Keep the first line under 50 characters if possible
-5. Be specific about what changed, not just that something changed
-6. Use imperative mood ("add" not "added" or "adds")
-7. Don't include file names unless crucial to understanding
-8. Focus on the "why" and "what" rather than "how"
-
-Emoji guidelines:
-- ✨ feat: new features
-- 🐛 fix: bug fixes
-- 📝 docs: documentation
-- 💄 style: formatting, styling
-- ♻️ refactor: code refactoring
-- ✅ test: adding/updating tests
-- 🔧 chore: maintenance tasks
-- ⚡ perf: performance improvements
-- 👷 ci: CI/CD changes
-- 📦 build: build system changes
-- 🚀 deploy: deployment related
-- 🔒 security: security improvements
-- 🎨 ui: UI/UX improvements
-- 🗃️ database: database changes
-- 🔥 remove: removing code/files
+	prompt = basePrompt + contextSection + emojiGuidelines + analysisNote + fmt.Sprintf(`
 
 Git Status:
 %s
@@ -299,7 +322,6 @@ Git Diff:
 %s
 
 Respond with ONLY the commit message including the emoji, no explanation or additional text.`, status, diff)
-	}
 
 	reqBody := GeminiRequest{
 		Contents: []Content{
