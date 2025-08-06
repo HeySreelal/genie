@@ -54,6 +54,9 @@ type ErrorInfo struct {
 }
 
 func main() {
+	var context string
+
+	// Parse arguments
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--version", "-v":
@@ -62,6 +65,10 @@ func main() {
 		case "--help", "-h":
 			printHelp()
 			return
+		default:
+			// If first argument is not a flag, treat it as context
+			// Join all arguments as context (in case of spaces)
+			context = strings.Join(os.Args[1:], " ")
 		}
 	}
 
@@ -81,6 +88,9 @@ func main() {
 	}
 
 	fmt.Println("🔍 Analyzing git changes...")
+	if context != "" {
+		fmt.Printf("📝 Using context: \"%s\"\n", context)
+	}
 
 	// Get git diff
 	diff, err := getGitDiff()
@@ -104,7 +114,7 @@ func main() {
 	fmt.Println("🧠 Generating commit message with Gemini AI...")
 
 	// Generate commit message
-	commitMsg, err := generateCommitMessage(apiKey, diff, status)
+	commitMsg, err := generateCommitMessage(apiKey, diff, status, context)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error generating commit message: %v\n", err)
 		os.Exit(1)
@@ -137,14 +147,19 @@ func printHelp() {
 
 USAGE:
     %s [OPTIONS]
+    %s [CONTEXT]
 
 OPTIONS:
     -h, --help      Show this help message
     -v, --version   Show version information
 
+ARGUMENTS:
+    CONTEXT         Optional context to help generate better commit messages
+                   (e.g., "changes from Bot API 9.0", "refactor for performance")
+
 SETUP:
     1. Get your Gemini API key from: https://makersuite.google.com/app/apikey
-    2. Set the environment variable: export GEMINI_API_KEY=your_api_key_here
+    2. Set the environment variable: export GOOGLE_AI_TOKEN=your_api_key_here
     3. Run %s in any git repository with staged changes
 
 DESCRIPTION:
@@ -153,12 +168,17 @@ DESCRIPTION:
     includes relevant emojis, and automatically copies the message to
     your clipboard for easy use.
 
-EXAMPLES:
-    %s                    # Generate commit message and copy to clipboard
-    %s --version         # Show version
-    %s --help           # Show this help
+    You can optionally provide context to help generate more accurate
+    commit messages when you have many related changes.
 
-`, appName, version, appName, appName, appName, appName, appName, appName)
+EXAMPLES:
+    %s                              # Generate commit message automatically
+    %s "Bot API 9.0 migration"      # Generate with context
+    %s "performance improvements"   # Generate with context
+    %s --version                   # Show version
+    %s --help                     # Show this help
+
+`, appName, version, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
 
 func isGitRepo() bool {
@@ -195,8 +215,54 @@ func getGitStatus() (string, error) {
 	return string(output), nil
 }
 
-func generateCommitMessage(apiKey, diff, status string) (string, error) {
-	prompt := fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
+func generateCommitMessage(apiKey, diff, status, context string) (string, error) {
+	var prompt string
+
+	if context != "" {
+		prompt = fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
+
+Analyze the following git diff and status, then generate a concise, descriptive commit message that follows these guidelines:
+
+1. Start with a relevant emoji that represents the type of change
+2. Use conventional commit format after emoji: emoji type(scope): description
+3. Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
+4. Keep the first line under 50 characters if possible
+5. Be specific about what changed, not just that something changed
+6. Use imperative mood ("add" not "added" or "adds")
+7. Don't include file names unless crucial to understanding
+8. Focus on the "why" and "what" rather than "how"
+
+**IMPORTANT: Take into account this context provided by the developer:**
+"%s"
+
+This context should guide your understanding of what these changes are about. Use this information to create a more accurate and meaningful commit message that reflects the broader purpose of these changes.
+
+Emoji guidelines:
+- ✨ feat: new features
+- 🐛 fix: bug fixes
+- 📝 docs: documentation
+- 💄 style: formatting, styling
+- ♻️ refactor: code refactoring
+- ✅ test: adding/updating tests
+- 🔧 chore: maintenance tasks
+- ⚡ perf: performance improvements
+- 👷 ci: CI/CD changes
+- 📦 build: build system changes
+- 🚀 deploy: deployment related
+- 🔒 security: security improvements
+- 🎨 ui: UI/UX improvements
+- 🗃️ database: database changes
+- 🔥 remove: removing code/files
+
+Git Status:
+%s
+
+Git Diff:
+%s
+
+Respond with ONLY the commit message including the emoji, no explanation or additional text.`, context, status, diff)
+	} else {
+		prompt = fmt.Sprintf(`You are a senior software engineer tasked with writing the perfect git commit message.
 
 Analyze the following git diff and status, then generate a concise, descriptive commit message that follows these guidelines:
 
@@ -233,6 +299,7 @@ Git Diff:
 %s
 
 Respond with ONLY the commit message including the emoji, no explanation or additional text.`, status, diff)
+	}
 
 	reqBody := GeminiRequest{
 		Contents: []Content{
