@@ -11,7 +11,7 @@
 
 **Never write boring commit messages again!** ✨
 
-`genie` analyzes your git changes and generates perfect, emoji-rich commit messages using Google's Gemini AI.
+`genie` analyzes your git changes and generates perfect, emoji-rich commit messages using Google's Gemini AI with its generous free tier.
 
 [🚀 Quick Start](#-quick-start) • [📖 Features](#-features) • [⚙️ Installation](#%EF%B8%8F-installation) • [🎯 Usage](#-usage) • [🤝 Contributing](#-contributing)
 
@@ -23,35 +23,37 @@
 
 ```bash
 $ genie
+
 🔍 Analyzing git changes...
 🧠 Generating commit message with Gemini AI...
 
 ✨ Generated commit message:
 ┌─────────────────────────────────────────────────────────────────
-│ ✨ feat(auth): add OAuth2 login integration
+│ 📦 build: Add installation script
 └─────────────────────────────────────────────────────────────────
 
 📋 Copying to clipboard... ✅ Done!
-
-🚀 Ready to commit! Run: git commit
 ```
 
 ## 🚀 Quick Start
 
 ```bash
-# 1. Clone and build
+# 1. Clone the repository
 git clone https://github.com/heysreelal/genie.git
 cd genie
-go build -o genie main.go
 
-# 2. Get your Gemini API key
-# Visit: https://makersuite.google.com/app/apikey
+# 2. Run the installer (builds and installs globally)
+chmod +x install.sh
+./install.sh
 
-# 3. Set environment variable
+# 3. Get your Gemini API key
+# Visit: https://aistudio.google.com/apikey
+
+# 4. Set environment variable
 export GOOGLE_AI_TOKEN=your_api_key_here
 
-# 4. Use it!
-./genie
+# 5. Use it anywhere!
+genie
 ```
 
 ## ✨ Features
@@ -69,6 +71,9 @@ Uses Google's Gemini AI to understand your changes and generate meaningful commi
 ### 📋 **Clipboard Ready**
 Instantly copies generated messages to your clipboard for seamless workflow integration.
 
+### 💬 **Context Aware**
+Provide optional context to generate more accurate commit messages for complex changes.
+
 </td>
 <td width="50%">
 
@@ -80,6 +85,9 @@ Works perfectly on macOS, Linux, and Windows with native clipboard support.
 
 ### ⚡ **Lightning Fast**
 Quick analysis and generation - no more staring at blank commit message boxes!
+
+### 💸 **Free Tier Friendly**
+Built specifically to leverage Gemini's generous free tier limits.
 
 </td>
 </tr>
@@ -98,7 +106,28 @@ Quick analysis and generation - no more staring at blank commit message boxes!
 
 ## ⚙️ Installation
 
-### Option 1: Build from Source
+### Option 1: Automated Installation (Recommended)
+
+The easiest way to install `genie` globally:
+
+```bash
+# Clone the repository
+git clone https://github.com/heysreelal/genie.git
+cd genie
+
+# Run the installer
+chmod +x install.sh
+./install.sh
+```
+
+The installer will:
+- ✅ Check all requirements (Go, Git)
+- 🔨 Build the binary
+- 📦 Install to `/usr/local/bin` (requires sudo)
+- ✨ Verify installation
+- 📋 Show setup instructions
+
+### Option 2: Manual Installation
 
 ```bash
 # Clone the repository
@@ -108,11 +137,11 @@ cd genie
 # Build the binary
 go build -o genie main.go
 
-# Make it globally available (optional)
+# Install globally (optional)
 sudo mv genie /usr/local/bin/
 ```
 
-### Option 2: Direct Download
+### Option 3: Direct Download
 
 Download the latest release from [GitHub Releases](https://github.com/heysreelal/genie/releases)
 
@@ -143,7 +172,7 @@ sudo apt install wl-copy  # For Wayland users
 <details>
 <summary><strong>🔑 Gemini API Key Setup</strong></summary>
 
-1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+1. Visit [Google AI Studio](https://aistudio.google.com/apikey)
 2. Create a new API key
 3. Set the environment variable:
 
@@ -166,11 +195,34 @@ source ~/.bashrc
 # Generate commit message for your changes
 genie
 
+# Generate with context for better accuracy
+genie "refactoring user authentication"
+genie "Bot API 9.0 migration"
+genie "performance improvements"
+
 # Show help
 genie --help
 
 # Show version  
 genie --version
+```
+
+### Advanced Usage with Context
+
+When you have complex changes spanning multiple areas, provide context to help the AI generate more accurate commit messages:
+
+```bash
+# For API updates
+genie "upgrading to Bot API 9.0"
+
+# For refactoring work
+genie "extracting reusable components"
+
+# For bug fixes
+genie "fixing memory leak in background service"
+
+# For feature work
+genie "implementing dark mode theme"
 ```
 
 ### Workflow Integration
@@ -182,15 +234,45 @@ echo "console.log('Hello World');" > app.js
 # 2. Stage your changes
 git add .
 
-# 3. Generate commit message
-genie
+# 3. Generate commit message (with or without context)
+genie "adding welcome message"
 
 # 4. Commit (message already in clipboard!)
 git commit
+# Or paste the message: git commit -m "✨ feat(app): add welcome message display"
+```
+
+### Smart Change Detection
+
+`genie` intelligently handles different types of changes:
+
+- **Staged changes** (preferred): Analyzes files ready for commit
+- **Unstaged changes**: Analyzes modified files when nothing is staged
+- **Untracked files**: Handles new files not yet added to git
+
+```bash
+# Example workflow
+$ git status
+On branch main
+Changes not staged for commit:
+  modified:   src/auth.js
+  
+Untracked files:
+  src/newfeature.js
+
+$ genie "adding OAuth integration"
+📝 No staged changes found, analyzing unstaged changes
+💡 Tip: Run 'git add .' to stage all changes before committing
+
+✨ Generated commit message:
+┌─────────────────────────────────────────────────────────────────
+│ ✨ feat(auth): add OAuth integration with Google provider
+└─────────────────────────────────────────────────────────────────
 ```
 
 ### Pro Tips 💡
 
+- **Use context for complex changes**: `genie "migrating from REST to GraphQL"`
 - **Stage specific files**: `git add file1.js file2.css` before running `genie`
 - **Review changes first**: `git diff --cached` to see what will be analyzed
 - **Combine with hooks**: Integrate `genie` into your git hooks for automated workflows
@@ -226,7 +308,12 @@ git commit
 ### Command Line Options
 
 ```bash
+genie [CONTEXT]
 genie [OPTIONS]
+
+CONTEXT:
+  Optional context to help generate better commit messages
+  Examples: "Bot API 9.0 migration", "performance improvements"
 
 OPTIONS:
   -h, --help     Show help information
@@ -276,7 +363,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- **Google Gemini AI** - For powering our intelligent commit message generation
+- **Google Gemini AI** - For powering our intelligent commit message generation with generous free tier limits
 - **Go Community** - For the amazing ecosystem and tools
 - **Contributors** - Thank you to everyone who helps improve `genie`!
 
@@ -298,5 +385,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <div align="center">
+
+### 🎭 Inspired By
+
+This project was inspired by [Commity](https://github.com/muhd-ameen/Commity), a similar tool that uses OpenAI's API. We created `genie` to take advantage of Google Gemini's generous free tier, making AI-powered commit messages accessible to everyone! 🚀
+
 <sub>🧞‍♂️ <strong>genie</strong> - Because great commit messages shouldn't require three wishes!</sub>
+
 </div>
