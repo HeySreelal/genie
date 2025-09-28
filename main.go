@@ -16,7 +16,7 @@ import (
 const (
 	appName   = "genie"
 	version   = "1.0.0"
-	geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+	geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 )
 
 // Color constants
